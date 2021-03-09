@@ -1,0 +1,271 @@
+---
+title: "Proyecto 1: Entrevista Analítica"
+author: "Juan David Carranza Sánchez"
+date: "1/1/2021"
+output:
+  html_document: null
+  theme: cosmo
+  toc: yes
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+* * *
+```{r, echo = TRUE, include=FALSE}
+require(htmlTable)
+require(knitr)
+require(kableExtra)
+require(tidyverse)
+require(plotly)
+require(gapminder)
+```
+## Parte 1: Arreglar la base de datos
+
+### Importar la base de Datos
+
+Para este proyecto, nos basaremos en la base de datos ficticia que proporcionó la entidad para el propósito de la entrevista. 
+
+```{r import data, echo=FALSE, include = FALSE}
+Data <- read_csv("../8. Prueba de ingreso/Base_datos_Prueba_Analitica_DAR(5475).csv")
+```
+
+Esta base de datos consiste en las ventas de una tienda de accesorios deportivos en EE.UU. y consta con `r nrow(Data)` filas y `r ncol(Data)` columnas. Echemos un vistazo a la data. 
+
+```{r table1}
+
+kable(head(Data), 'html') %>%
+  kable_classic(position = 'left') %>%
+  kable_styling(bootstrap_options = c('stripped', 'hover', 'condensed'),
+                full_width = F, position = 'left', html_font = 'Zap') %>%
+  column_spec(1, bold = T, border_right = T, width = '7em', background = 'lightblue') %>%
+  row_spec(0, bold = T)
+  
+```
+
+
+Se puede ver que al principio de la tabla hay un mal registro; este ejercicio se basa principalmente en arreglar esta base de datos y en sacar información de los datos acá registrados. 
+
+### Arreglando el Año
+
+En general, con ayuda de unique se identificarán registros que sean outliers o directamente sean incorrectos. En este caso, hay una serie de datos que parecen ser incorrectos, así que serán eliminados. 
+```{r fixyear, echo=FALSE}
+(unique(Data$Year))
+```
+
+```{r fixyear2, echo=TRUE, include=TRUE}
+Data <- Data %>%
+  filter(Year == 2016 | Year == 2015)
+```
+
+```{r fixyear3, echo=FALSE}
+(unique(Data$Year))
+```
+
+### Arreglando la edad de los clientes
+
+Para revisar la edad de los clientes, usaremos nuevamente un unique para detectar las inconsistencias de la misma; debido a la naturaleza de los datos, cualquier dato en 0 será eliminado de la base. 
+
+```{r fixbirth, echo=FALSE}
+(sort(unique(Data$CustomerAge)))
+```
+
+En este caso, vemos que hay un dato que es igual a cero y este será eliminado, otros que parecen estar multiplicados por 1/100, otros parecen estar multiplicados por 10 y finalmente otros que parecen estar multiplicados . Hay un registro con un valor que parece multiplicado por 100, así que escalaremos estos valores. Todo lo realizaremos con un sólo chunk de código.
+
+```{r fixbirth2, echo=TRUE, include=TRUE}
+Data <- Data %>%
+  filter(CustomerAge > 0)%>%
+  mutate(CustomerAge = case_when(
+    CustomerAge < 1 ~ CustomerAge * 100,
+    CustomerAge > 100 & CustomerAge < 1000 ~ CustomerAge * 1/10,
+    CustomerAge > 1000 ~ CustomerAge * 1/1000,
+    TRUE ~ trunc(CustomerAge)
+  ))
+```
+
+```{r fixbirth3, echo=FALSE}
+(sort(unique(Data$CustomerAge)))
+```
+
+### Arreglando el género de los clientes
+
+El género tiene algunas letras repetidas, se soluciona eliminando aquellas que sobren ya que la primera de las mismas indica correctamente el género del cliente. 
+
+```{r fixgender1, echo=FALSE}
+(sort(unique(Data$CustomerGender)))
+```
+
+Este chunk cuenta el número de carácteres que tiene la variable, sí tiene más de uno, eliminará todos los carácteres adicionales dejando sólo uno, M o F según sea el caso. 
+
+```{r fixgender2, echo=TRUE, include=TRUE}
+Data <- Data %>%
+  mutate(CustomerGender = case_when(
+    nchar(CustomerGender) > 1 ~ str_sub(CustomerGender, 1, 1),
+    TRUE ~ CustomerGender
+  ))
+```
+
+```{r fixgender3, echo=FALSE}
+(sort(unique(Data$CustomerGender)))
+```
+
+### Arreglando el Estado
+
+Hay unos pequeños errores de escritura en algunos de los Estados acá citados, por lo que utilizaremos un **case_when** para poder arreglar todos los datos de una sentada. 
+
+```{r fixstate1, echo=FALSE}
+(sort(unique(Data$State)))
+```
+
+En este caso, **Georgia**, **New York**, **Utah** y **Mississippi** deben ser corregidos.
+
+```{r fixstate2, echo = TRUE}
+Data <- Data %>%
+  mutate(State = case_when(
+    str_detect(State, "^New") ~ "New York",
+    str_detect(State, "^Ut") ~ "Utah",
+    str_detect(State, "^Geo") ~ "Georgia",
+    str_detect(State, "^Miss") ~ "Mississippi",
+    TRUE ~ State
+  ))
+```
+
+En este código, la expresión regular "**^**" cumple la función de indicar que busque el string que comienza con el patrón indicado, para ser reemplazado con el string a la derecha de la tilde. 
+
+```{r fixstate3, echo=FALSE}
+(sort(unique(Data$State)))
+```
+
+## Parte 2: Generación de información a partir de los datos. 
+
+### Información de la edad de los clientes 
+
+Valdría la pena mirar la edad media de los clientes por género y por Estado, así el negocio podría tener objetivos más claros y poder segmentar mejor los productos que ofrece. 
+
+```{r analysis1, echo = TRUE, include = TRUE}
+
+Resume1 <- Data %>%
+  mutate(CustomerAge = cut(CustomerAge, breaks = c(15,30,45,60,79)))
+
+```
+
+Para ver mejor los resultados y la información valiosa, se aplica una transformación de tipo logarítmica. En este script visualizaremos tanto la versión con logaritmo transformada como la versión sin transformación. 
+
+ 
+
+```{r, echo = FALSE, include=FALSE}
+layout_ggplotly <- function(gg, x = -0.10, y = -0.17){
+  # The 1 and 2 goes into the list that contains the options for the x and y axis labels respectively
+  gg[['x']][['layout']][['annotations']][[1]][['y']] <- x
+  gg[['x']][['layout']][['annotations']][[2]][['x']] <- y
+  gg
+}
+```
+
+```{r boxplot, echo = TRUE, include=TRUE}
+
+p <- ggplot(Resume1) +
+   aes(x = CustomerAge, y = Revenue, fill = CustomerGender) +
+   geom_boxplot() +
+   scale_fill_brewer(palette = "PuOr") +
+   scale_y_continuous(trans = "log") +
+   theme_classic() +
+   labs(x = "Edad del cliente", 
+        y = "Total Ganancias (Log)", 
+        title = "Ganancias por Edad y Género")+
+   facet_grid(vars(Year), vars(CustomerGender))
+
+ggplotly(p) %>% 
+  layout(legend = list(orientation = "h", x = 0.4, y = -0.2)) %>%
+  layout_ggplotly
+
+```
+
+```{r, echo = FALSE, include=FALSE}
+layout_ggplotly <- function(gg, x = -0.10, y = -0.07){
+  # The 1 and 2 goes into the list that contains the options for the x and y axis labels respectively
+  gg[['x']][['layout']][['annotations']][[1]][['y']] <- x
+  gg[['x']][['layout']][['annotations']][[2]][['x']] <- y
+  gg
+}
+```
+
+```{r, echo = FALSE, include=TRUE}
+
+p <- ggplot(Resume1) +
+   aes(x = CustomerAge, y = Revenue, fill = CustomerGender) +
+   geom_boxplot() +
+   scale_fill_brewer(palette = "PuOr") +
+   scale_y_continuous() +
+   theme_classic() +
+   labs(x = "Edad del cliente", 
+        y = "Total Ganancias (Sin Transformación)", 
+        title = "Ganancias por Edad y Género")+
+   facet_grid(vars(Year), vars(CustomerGender))
+
+ggplotly(p) %>% 
+  layout(legend = list(orientation = "h", x = 0.4, y = -0.2)) %>%
+  layout_ggplotly
+
+```
+
+Los datos presentados muestran las ganancias por cliente, es decir, por cada cliente de una edad dada, la mediana de ingreso de la tienda por cliente puede verse en el gráfico. En la escala logarítmica es más complicado ver los outliers, sin embargo, nos proporciona una visión más completa por edad del comportamiento de la mediana del ingreso por cliente. Por su parte, sin la transformación logarítmica, podemos ver outliers más claramente como los que se aprecian en 2016, así como la caída del ingreso mediano por cliente en los clientes hombres menores de 30 años en 2016. 
+
+### Segmentación de mercado 
+
+En particular, las tiendas deben tener la idea de dónde se concentra su mayor ganancia. Este gráfico muestra la cantidad de veces que un producto fue ordenado por un cliente, discriminando por su edad y el ingreso que genera cada una de las compras. 
+
+
+```{r}
+layout_ggplotly <- function(gg, x = -0.04, y = -0.08){
+  # The 1 and 2 goes into the list that contains the options for the x and y axis labels respectively
+  gg[['x']][['layout']][['annotations']][[1]][['y']] <- x
+  gg[['x']][['layout']][['annotations']][[2]][['x']] <- y
+  gg
+}
+```
+
+
+```{r, echo = TRUE, include=TRUE}
+
+Ventas <- ggplot(Resume1) +
+ aes(x = Revenue, fill = SubCategory) +
+ geom_histogram(bins = 69L) +
+ scale_fill_viridis_d(option = "inferno") +
+ labs(x = "Ingreso", y = "Cantidad de productos", title = "Productos ordenados", fill = "Sub Categoría") +
+ theme_classic() +
+ facet_grid(vars(CustomerAge), vars(), scales = "free_y") +
+ xlim(0L, 3000L)
+
+ 
+ggplotly(Ventas) %>%
+  layout_ggplotly
+
+```
+
+Las llantas y las botellas personalizadas que vende la tienda explican gran parte del volumen de las ventas, sin embargo, sí nos movemos en el eje de las abcisas, vemos que gran parte de los ingresos de la tienda se explican mejor por la venta de bicicletas, siendo las bicicletas todoterreno las que mejor ganancia dejan. 
+
+```{r}
+layout_ggplotly <- function(gg, x = 0, y = 0){
+  # The 1 and 2 goes into the list that contains the options for the x and y axis labels respectively
+  gg[['x']][['layout']][['annotations']][[1]][['y']] <- x
+  gg[['x']][['layout']][['annotations']][[2]][['x']] <- y
+  gg
+}
+```
+
+```{r, echo = TRUE, include=TRUE}
+Densidad <- ggplot(Resume1) +
+ aes(x = Revenue, fill = ProductCategory) +
+ geom_density(adjust = 1L) +
+ scale_fill_viridis_d(option = "plasma") +
+ labs(x = "Ingreso", y = "Densidad", title = "Distribución del Ingreso", fill = "Categoría") +
+ theme_classic() +
+ xlim(0L, 3000L)
+
+ggplotly(Densidad) 
+```
+
+En la densidad, claramente en la parte baja de la distribución, los accesorios dejan más ganancia por volumen que por margen, mientras que las bicicletas dejan más ganancia por margen que por volumen. La vestimenta por su parte, es la que más suavemente se distribuye, indicando que es la que más equilibrio tiene en cuanto a ingreso y volumen de venta. 
+
